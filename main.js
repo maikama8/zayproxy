@@ -180,8 +180,8 @@ function createWindow() {
       `).catch(err => log.error('Failed to inject error handler:', err));
     });
 
-    // Open DevTools only in dev mode
-    if (process.argv.includes('--dev') || !app.isPackaged) {
+    // Open DevTools only when explicitly requested with --dev flag
+    if (process.argv.includes('--dev')) {
       mainWindow.webContents.openDevTools();
       log.info('Developer tools opened (dev mode)');
     }
