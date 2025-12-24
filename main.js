@@ -113,11 +113,15 @@ function createWindow() {
     });
 
     mainWindow.on('close', (event) => {
-      if (!isQuitting && store.get('settings.minimizeToTray')) {
-        event.preventDefault();
-        mainWindow.hide();
-        log.info('Window minimized to tray');
-        return false;
+      // On macOS, allow window to close but keep app running (hide to tray)
+      if (!isQuitting) {
+        const minimizeToTray = store.get('settings.minimizeToTray', true);
+        if (minimizeToTray || process.platform === 'darwin') {
+          event.preventDefault();
+          mainWindow.hide();
+          log.info('Window hidden to tray - app continues running in background');
+          return false;
+        }
       }
       log.info('Window closing');
     });
@@ -189,85 +193,96 @@ function createWindow() {
 
 // Create system tray
 function createTray() {
+  // Don't create tray if one already exists
+  if (tray) {
+    log.info('Tray already exists, skipping creation');
+    return;
+  }
+
   const fs = require('fs');
   const { nativeImage } = require('electron');
   
-  let iconPath;
   let icon;
   
-  if (process.platform === 'win32') {
-    iconPath = path.join(__dirname, 'assets', 'tray-icon.ico');
-    if (!fs.existsSync(iconPath)) {
-      iconPath = path.join(__dirname, 'assets', 'icon.ico');
-    }
-  } else {
-    // macOS: prefer template icon, fallback to regular icon
-    iconPath = path.join(__dirname, 'assets', 'tray-icon.png');
-    if (!fs.existsSync(iconPath)) {
-      iconPath = path.join(__dirname, 'assets', 'icon.png');
-    }
-  }
-
-  // Try to create tray with icon
   try {
-    if (fs.existsSync(iconPath)) {
-      icon = nativeImage.createFromPath(iconPath);
-      
-      // On macOS, mark as template image for proper menu bar appearance
-      // Template images are black/transparent and macOS colors them automatically
-      if (process.platform === 'darwin' && icon) {
-        icon.setTemplateImage(true);
+    if (process.platform === 'darwin') {
+      // macOS: try to use icon.png and resize it
+      const iconPath = path.join(__dirname, 'assets', 'icon.png');
+      if (fs.existsSync(iconPath)) {
+        icon = nativeImage.createFromPath(iconPath);
+        if (icon && !icon.isEmpty()) {
+          // Resize to appropriate menu bar size (22x22 for standard, 44x44 for Retina)
+          // macOS will automatically use @2x version if available
+          const resized = icon.resize({ width: 22, height: 22, quality: 'best' });
+          // Don't set as template initially - let's see if it shows without it
+          // Template images need to be black/white/transparent only
+          tray = new Tray(resized);
+          log.info(`Tray created successfully with icon: ${iconPath} (resized to 22x22)`);
+          log.info(`Tray icon size: ${resized.getSize()}`);
+        } else {
+          log.warn('Icon is empty, will create default icon');
+        }
       }
       
-      tray = new Tray(icon);
-      log.info(`Tray created with icon: ${iconPath}`);
-    } else {
-      // Create a simple default icon for macOS menu bar
-      if (process.platform === 'darwin') {
-        // Try to use the main app icon as fallback
-        const fallbackPath = path.join(__dirname, 'assets', 'icon.png');
-        if (fs.existsSync(fallbackPath)) {
-          icon = nativeImage.createFromPath(fallbackPath);
-          if (icon) {
-            // Resize to appropriate menu bar size (22x22 for Retina = 44x44 pixels)
-            icon = icon.resize({ width: 22, height: 22 });
-            icon.setTemplateImage(true);
-            tray = new Tray(icon);
-            log.info('Tray created with resized app icon as template');
-          }
-        } else {
-          // Last resort: create a minimal icon
-          // Create a 22x22 black square (template icon)
-          const size = 22;
-          const iconBuffer = Buffer.alloc(size * size * 4); // RGBA
-          for (let i = 0; i < size * size; i++) {
-            iconBuffer[i * 4] = 0;     // R
-            iconBuffer[i * 4 + 1] = 0; // G
-            iconBuffer[i * 4 + 2] = 0; // B
-            iconBuffer[i * 4 + 3] = 255; // A (opaque)
-          }
-          icon = nativeImage.createFromBuffer(iconBuffer, { width: size, height: size });
-          icon.setTemplateImage(true);
-          tray = new Tray(icon);
-          log.info('Tray created with minimal default template icon');
+      // If still no tray, create a simple default icon
+      if (!tray) {
+        log.warn('Could not create tray with app icon, creating default icon');
+        // Create a simple 22x22 template icon (white square that macOS will colorize)
+        const size = 22;
+        const iconBuffer = Buffer.alloc(size * size * 4); // RGBA
+        for (let i = 0; i < size * size; i++) {
+          iconBuffer[i * 4] = 255;     // R (white)
+          iconBuffer[i * 4 + 1] = 255; // G
+          iconBuffer[i * 4 + 2] = 255; // B
+          iconBuffer[i * 4 + 3] = 255; // A (opaque)
         }
+        icon = nativeImage.createFromBuffer(iconBuffer, { width: size, height: size });
+        icon.setTemplateImage(true);
+        tray = new Tray(icon);
+        log.info('Tray created with default template icon');
+      }
+    } else {
+      // Windows
+      const iconPath = path.join(__dirname, 'assets', 'icon.ico');
+      if (fs.existsSync(iconPath)) {
+        tray = new Tray(iconPath);
+        log.info(`Tray created with icon: ${iconPath}`);
       } else {
-        // Windows: try to use main icon
-        const fallbackPath = path.join(__dirname, 'assets', 'icon.png');
-        if (fs.existsSync(fallbackPath)) {
-          tray = new Tray(fallbackPath);
-          log.info(`Tray created with fallback icon: ${fallbackPath}`);
+        const pngPath = path.join(__dirname, 'assets', 'icon.png');
+        if (fs.existsSync(pngPath)) {
+          tray = new Tray(pngPath);
+          log.info(`Tray created with icon: ${pngPath}`);
         }
       }
     }
   } catch (e) {
-    log.error('Could not create system tray:', e);
-    return;
-  }
-
-  if (!tray) {
-    log.error('Tray creation failed - no icon available');
-    return;
+    log.error('Error creating system tray:', e);
+    log.error('Error stack:', e.stack);
+    // Try one last time with a simple default icon
+    if (!tray && process.platform === 'darwin') {
+      try {
+        const size = 22;
+        const iconBuffer = Buffer.alloc(size * size * 4);
+        for (let i = 0; i < size * size; i++) {
+          iconBuffer[i * 4] = 255;
+          iconBuffer[i * 4 + 1] = 255;
+          iconBuffer[i * 4 + 2] = 255;
+          iconBuffer[i * 4 + 3] = 255;
+        }
+        const defaultIcon = nativeImage.createFromBuffer(iconBuffer, { width: size, height: size });
+        defaultIcon.setTemplateImage(true);
+        tray = new Tray(defaultIcon);
+        log.info('Tray created with emergency fallback icon');
+      } catch (fallbackError) {
+        log.error('Failed to create tray even with emergency fallback:', fallbackError);
+        return;
+      }
+    }
+    
+    if (!tray) {
+      log.error('Tray creation completely failed - tray icon will not be available');
+      return;
+    }
   }
 
   // Configure tray behavior
@@ -284,14 +299,44 @@ function createTray() {
       if (mainWindow.isVisible()) {
         mainWindow.hide();
       } else {
-        mainWindow.show();
-        mainWindow.focus();
+        // Show and focus the window
+        if (!mainWindow.isDestroyed()) {
+          mainWindow.show();
+          mainWindow.focus();
+        } else {
+          // Window was destroyed, recreate it
+          createWindow();
+        }
       }
+    } else {
+      // Window doesn't exist, create it
+      createWindow();
     }
   });
+  
+  // macOS: right-click shows context menu
+  if (process.platform === 'darwin') {
+    tray.on('right-click', () => {
+      updateTrayMenu();
+    });
+  }
 
   tray.setToolTip('ZayProxy - Proxy Manager');
-  log.info('System tray initialized and visible in menu bar');
+  
+  // Make sure tray is visible
+  if (process.platform === 'darwin') {
+    // On macOS, ensure the tray is not destroyed
+    tray.on('destroyed', () => {
+      log.warn('Tray was destroyed, recreating...');
+      tray = null;
+      // Recreate after a short delay
+      setTimeout(() => {
+        createTray();
+      }, 1000);
+    });
+  }
+  
+  log.info('System tray initialized - check menu bar for icon');
 }
 
 // Update tray menu
@@ -1092,14 +1137,33 @@ ipcMain.handle('select-application-file', async (event) => {
 app.whenReady().then(() => {
   log.info('App ready, initializing...');
   try {
+    // On macOS, optionally hide dock icon for menu bar only app
+    // (Uncomment if you want true menu bar only behavior)
+    // if (process.platform === 'darwin') {
+    //   app.dock.hide();
+    // }
+    
     initializeManagers();
     log.info('Managers initialized');
-    createWindow();
+    
+    // Create tray first so it's always available
     createTray();
+    
+    // Then create window
+    createWindow();
+    
     log.info('App initialized successfully');
   } catch (error) {
     log.error('Error during app initialization:', error);
     log.error('Stack trace:', error.stack);
+    // Try to create tray even if window creation fails
+    if (!tray) {
+      try {
+        createTray();
+      } catch (trayError) {
+        log.error('Failed to create tray after error:', trayError);
+      }
+    }
     dialog.showErrorBox('Initialization Error', `Failed to initialize app: ${error.message}`);
   }
 });

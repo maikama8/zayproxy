@@ -584,17 +584,20 @@ function setupNavigation() {
       e.preventDefault();
       const section = item.dataset.section;
       
-      // Update nav items - remove active class and add bg-primary/10 for active
+      // Update nav items - reset all to default state
       navItems.forEach(nav => {
-        nav.classList.remove('active', 'bg-primary', 'text-primary');
-        nav.classList.add('hover:bg-base-300');
+        // Remove active state classes only
+        nav.classList.remove('active', 'bg-primary', 'text-primary-content');
       });
+      
+      // Set active state on clicked item
       item.classList.add('active', 'bg-primary', 'text-primary-content');
-      item.classList.remove('hover:bg-base-300');
       
       // Update sections - use hidden class for daisyUI
       if (sections && sections.length > 0) {
-        sections.forEach(sec => sec.classList.add('hidden'));
+        sections.forEach(sec => {
+          sec.classList.add('hidden');
+        });
         const targetSection = document.getElementById(`${section}Section`);
         if (targetSection) {
           targetSection.classList.remove('hidden');
