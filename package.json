@@ -1,0 +1,79 @@
+{
+  "name": "ZayProxy",
+  "version": "1.0.0",
+  "description": "Cross-platform desktop proxy manager application",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:all": "electron-builder --mac --win"
+  },
+  "keywords": [
+    "proxy",
+    "electron",
+    "desktop",
+    "network"
+  ],
+  "author": "Zarachtech",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "electron-log": "^5.0.1",
+    "proxy-agent": "^6.3.1",
+    "node-fetch": "^2.7.0",
+    "https-proxy-agent": "^7.0.2",
+    "socks-proxy-agent": "^8.0.2",
+    "keytar": "^7.9.0"
+  },
+  "build": {
+    "appId": "com.zayproxy.app",
+    "productName": "ZayProxy",
+    "icon": "assets/icon.png",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!node_modules/**/*",
+      "node_modules/electron-store/**/*",
+      "node_modules/electron-log/**/*",
+      "node_modules/proxy-agent/**/*",
+      "node_modules/node-fetch/**/*",
+      "node_modules/https-proxy-agent/**/*",
+      "node_modules/socks-proxy-agent/**/*",
+      "node_modules/keytar/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "icon": "assets/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ]
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "requestedExecutionLevel": "requireAdministrator"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
+

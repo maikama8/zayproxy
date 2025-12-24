@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
+  <title>Proxy Manager</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="logo">
+        <h1>Proxy Manager</h1>
+      </div>
+      <nav class="nav-menu">
+        <a href="#" class="nav-item active" data-section="profiles">
+          <span class="nav-icon">⚙️</span>
+          <span>Profiles</span>
+        </a>
+        <a href="#" class="nav-item" data-section="rules">
+          <span class="nav-icon">🔀</span>
+          <span>Rules</span>
+        </a>
+        <a href="#" class="nav-item" data-section="logs">
+          <span class="nav-icon">📋</span>
+          <span>Logs</span>
+        </a>
+        <a href="#" class="nav-item" data-section="settings">
+          <span class="nav-icon">⚙️</span>
+          <span>Settings</span>
+        </a>
+      </nav>
+      <div class="proxy-status">
+        <div class="status-indicator" id="statusIndicator"></div>
+        <div class="status-text">
+          <div id="statusText">Disabled</div>
+          <div class="status-profile" id="statusProfile">No active profile</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Quick Switcher -->
+      <div class="quick-switcher">
+        <select id="profileSwitcher" class="profile-select">
+          <option value="">Select a profile...</option>
+        </select>
+        <button id="enableBtn" class="btn btn-primary">Enable</button>
+        <button id="disableBtn" class="btn btn-secondary">Disable</button>
+      </div>
+
+      <!-- Profiles Section -->
+      <section id="profilesSection" class="content-section active">
+        <div class="section-header">
+          <h2>Proxy Profiles</h2>
+          <button id="addProfileBtn" class="btn btn-primary">+ Add Profile</button>
+        </div>
+        <div class="profiles-list" id="profilesList">
+          <!-- Profiles will be dynamically added here -->
+        </div>
+      </section>
+
+      <!-- Rules Section -->
+      <section id="rulesSection" class="content-section">
+        <div class="section-header">
+          <h2>URL Pattern Rules</h2>
+          <button id="addRuleBtn" class="btn btn-primary">+ Add Rule</button>
+        </div>
+        <div class="rules-list" id="rulesList">
+          <!-- Rules will be dynamically added here -->
+        </div>
+      </section>
+
+      <!-- Logs Section -->
+      <section id="logsSection" class="content-section">
+        <div class="section-header">
+          <h2>Connection Logs</h2>
+          <div class="log-controls">
+            <button id="clearLogsBtn" class="btn btn-secondary">Clear</button>
+            <button id="exportLogsBtn" class="btn btn-secondary">Export</button>
+          </div>
+        </div>
+        <div class="logs-container">
+          <div class="logs-view" id="logsView">
+            <!-- Logs will be dynamically added here -->
+          </div>
+        </div>
+      </section>
+
+      <!-- Settings Section -->
+      <section id="settingsSection" class="content-section">
+        <div class="section-header">
+          <h2>Settings</h2>
+        </div>
+        <div class="settings-form">
+          <div class="setting-item">
+            <label>
+              <input type="checkbox" id="autoStart">
+              Auto-start on boot
+            </label>
+          </div>
+          <div class="setting-item">
+            <label>
+              <input type="checkbox" id="minimizeToTray">
+              Minimize to tray
+            </label>
+          </div>
+          <div class="setting-item">
+            <label>
+              <input type="checkbox" id="autoProxy">
+              Auto-proxy mode
+            </label>
+          </div>
+          <div class="setting-item">
+            <label>
+              Theme:
+              <select id="themeSelect">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </label>
+          </div>
+          <div class="setting-item">
+            <button id="saveSettingsBtn" class="btn btn-primary">Save Settings</button>
+          </div>
+          <div class="setting-item">
+            <button id="exportConfigBtn" class="btn btn-secondary">Export Configuration</button>
+            <button id="importConfigBtn" class="btn btn-secondary">Import Configuration</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Profile Modal -->
+  <div id="profileModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="profileModalTitle">Add Proxy Profile</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="profileForm">
+          <input type="hidden" id="profileId">
+          <div class="form-group">
+            <label for="profileName">Name *</label>
+            <input type="text" id="profileName" required>
+          </div>
+          <div class="form-group">
+            <label for="profileType">Type *</label>
+            <select id="profileType" required>
+              <option value="HTTP">HTTP</option>
+              <option value="HTTPS">HTTPS</option>
+              <option value="SOCKS4">SOCKS4</option>
+              <option value="SOCKS5">SOCKS5</option>
+              <option value="PAC">PAC</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="profileHost">Host *</label>
+              <input type="text" id="profileHost" required>
+            </div>
+            <div class="form-group">
+              <label for="profilePort">Port *</label>
+              <input type="number" id="profilePort" min="1" max="65535" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="profileUsername">Username</label>
+              <input type="text" id="profileUsername">
+            </div>
+            <div class="form-group">
+              <label for="profilePassword">Password</label>
+              <input type="password" id="profilePassword">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="profileBypass">Bypass List (comma-separated)</label>
+            <input type="text" id="profileBypass" placeholder="example.com, *.local">
+          </div>
+          <div class="form-group">
+            <label for="profilePAC">PAC Script URL (for PAC type)</label>
+            <input type="url" id="profilePAC">
+          </div>
+          <div class="form-actions">
+            <button type="button" id="testProfileBtn" class="btn btn-secondary">Test Proxy</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+            <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rule Modal -->
+  <div id="ruleModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="ruleModalTitle">Add URL Rule</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="ruleForm">
+          <input type="hidden" id="ruleId">
+          <div class="form-group">
+            <label for="ruleName">Rule Name *</label>
+            <input type="text" id="ruleName" required>
+          </div>
+          <div class="form-group">
+            <label for="rulePattern">URL Pattern *</label>
+            <input type="text" id="rulePattern" placeholder="*.example.com" required>
+            <small>Use * for wildcards or enter a regex pattern</small>
+          </div>
+          <div class="form-group">
+            <label for="ruleType">Pattern Type *</label>
+            <select id="ruleType" required>
+              <option value="wildcard">Wildcard</option>
+              <option value="regex">Regex</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="ruleProfile">Proxy Profile *</label>
+            <select id="ruleProfile" required>
+              <option value="">Select a profile...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="rulePriority">Priority</label>
+            <input type="number" id="rulePriority" value="0" min="0">
+            <small>Higher priority rules are evaluated first</small>
+          </div>
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="ruleEnabled" checked>
+              Enabled
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
+
