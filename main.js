@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, dialog, shell, nativeTheme } = require('electron');
 const path = require('path');
 const { exec, execSync } = require('child_process');
 const Store = require('electron-store');
@@ -6,6 +6,7 @@ const log = require('electron-log');
 const ProxyManager = require('./modules/proxyManager');
 const RulesEngine = require('./modules/rulesEngine');
 const Logger = require('./modules/logger');
+const FirewallManager = require('./modules/firewallManager');
 
 // Configure logging - enable comprehensive error logging
 log.transports.file.level = 'silly'; // Log everything to file
@@ -32,7 +33,7 @@ process.on('uncaughtException', (error) => {
 });
 
 // Log app startup
-log.info('=== Proxy Manager Starting ===');
+log.info('=== ZayProxy Starting ===');
 log.info('Platform:', process.platform);
 log.info('Node version:', process.versions.node);
 log.info('Electron version:', process.versions.electron);
@@ -43,6 +44,7 @@ const store = new Store({
   defaults: {
     profiles: [],
     rules: [],
+    firewallRules: [],
     settings: {
       theme: 'light',
       autoStart: false,
@@ -67,6 +69,17 @@ function initializeManagers() {
   proxyManager = new ProxyManager(store);
   rulesEngine = new RulesEngine(store);
   logger = new Logger();
+  firewallManager = new FirewallManager(store, logger);
+  
+  // Apply firewall rules on startup if any are enabled
+  const firewallRules = store.get('firewallRules', []);
+  const activeRules = firewallRules.filter(r => r.enabled);
+  if (activeRules.length > 0) {
+    log.info(`Found ${activeRules.length} active firewall rule(s), applying on startup...`);
+    firewallManager.applyAllRules().catch(err => {
+      log.error('Error applying firewall rules on startup:', err);
+    });
+  }
 }
 
 // Create main window
@@ -163,9 +176,11 @@ function createWindow() {
       `).catch(err => log.error('Failed to inject error handler:', err));
     });
 
-    // Open DevTools for debugging
-    mainWindow.webContents.openDevTools();
-    log.info('Developer tools opened (for debugging)');
+    // Open DevTools only in dev mode
+    if (process.argv.includes('--dev') || !app.isPackaged) {
+      mainWindow.webContents.openDevTools();
+      log.info('Developer tools opened (dev mode)');
+    }
   } catch (error) {
     log.error('Error creating window:', error);
     dialog.showErrorBox('Window Creation Error', `Failed to create window: ${error.message}`);
@@ -175,40 +190,108 @@ function createWindow() {
 // Create system tray
 function createTray() {
   const fs = require('fs');
-  let iconPath = process.platform === 'win32'
-    ? path.join(__dirname, 'assets', 'tray-icon.ico')
-    : path.join(__dirname, 'assets', 'tray-icon.png');
-
-  // Fallback to main icon if tray icon doesn't exist
-  if (!fs.existsSync(iconPath)) {
-    iconPath = path.join(__dirname, 'assets', 'icon.png');
+  const { nativeImage } = require('electron');
+  
+  let iconPath;
+  let icon;
+  
+  if (process.platform === 'win32') {
+    iconPath = path.join(__dirname, 'assets', 'tray-icon.ico');
+    if (!fs.existsSync(iconPath)) {
+      iconPath = path.join(__dirname, 'assets', 'icon.ico');
+    }
+  } else {
+    // macOS: prefer template icon, fallback to regular icon
+    iconPath = path.join(__dirname, 'assets', 'tray-icon.png');
+    if (!fs.existsSync(iconPath)) {
+      iconPath = path.join(__dirname, 'assets', 'icon.png');
+    }
   }
 
-  // Try to create tray with icon, or skip if icon doesn't exist
-  // Electron will create a default icon if path is invalid
+  // Try to create tray with icon
   try {
     if (fs.existsSync(iconPath)) {
-      tray = new Tray(iconPath);
+      icon = nativeImage.createFromPath(iconPath);
+      
+      // On macOS, mark as template image for proper menu bar appearance
+      // Template images are black/transparent and macOS colors them automatically
+      if (process.platform === 'darwin' && icon) {
+        icon.setTemplateImage(true);
+      }
+      
+      tray = new Tray(icon);
+      log.info(`Tray created with icon: ${iconPath}`);
     } else {
-      // Create a minimal default icon or skip tray creation
-      // For now, we'll skip tray if no icon exists to avoid errors
-      log.warn('Tray icon not found, system tray disabled. Add icons to assets/ folder to enable.');
-      return;
+      // Create a simple default icon for macOS menu bar
+      if (process.platform === 'darwin') {
+        // Try to use the main app icon as fallback
+        const fallbackPath = path.join(__dirname, 'assets', 'icon.png');
+        if (fs.existsSync(fallbackPath)) {
+          icon = nativeImage.createFromPath(fallbackPath);
+          if (icon) {
+            // Resize to appropriate menu bar size (22x22 for Retina = 44x44 pixels)
+            icon = icon.resize({ width: 22, height: 22 });
+            icon.setTemplateImage(true);
+            tray = new Tray(icon);
+            log.info('Tray created with resized app icon as template');
+          }
+        } else {
+          // Last resort: create a minimal icon
+          // Create a 22x22 black square (template icon)
+          const size = 22;
+          const iconBuffer = Buffer.alloc(size * size * 4); // RGBA
+          for (let i = 0; i < size * size; i++) {
+            iconBuffer[i * 4] = 0;     // R
+            iconBuffer[i * 4 + 1] = 0; // G
+            iconBuffer[i * 4 + 2] = 0; // B
+            iconBuffer[i * 4 + 3] = 255; // A (opaque)
+          }
+          icon = nativeImage.createFromBuffer(iconBuffer, { width: size, height: size });
+          icon.setTemplateImage(true);
+          tray = new Tray(icon);
+          log.info('Tray created with minimal default template icon');
+        }
+      } else {
+        // Windows: try to use main icon
+        const fallbackPath = path.join(__dirname, 'assets', 'icon.png');
+        if (fs.existsSync(fallbackPath)) {
+          tray = new Tray(fallbackPath);
+          log.info(`Tray created with fallback icon: ${fallbackPath}`);
+        }
+      }
     }
   } catch (e) {
-    log.warn('Could not create system tray:', e.message);
+    log.error('Could not create system tray:', e);
     return;
+  }
+
+  if (!tray) {
+    log.error('Tray creation failed - no icon available');
+    return;
+  }
+
+  // Configure tray behavior
+  if (process.platform === 'darwin') {
+    tray.setIgnoreDoubleClickEvents(true);
   }
 
   updateTrayMenu();
 
+  // macOS: left-click toggles window, right-click shows menu
+  // Windows: left-click shows menu
   tray.on('click', () => {
     if (mainWindow) {
-      mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show();
+      if (mainWindow.isVisible()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
     }
   });
 
-  tray.setToolTip('Proxy Manager');
+  tray.setToolTip('ZayProxy - Proxy Manager');
+  log.info('System tray initialized and visible in menu bar');
 }
 
 // Update tray menu
@@ -255,6 +338,39 @@ function updateTrayMenu() {
           switchProfile(profile.id);
         }
       }))
+    },
+    { type: 'separator' },
+    {
+      label: 'Firewall',
+      submenu: [
+        {
+          label: 'Enable All Blocks',
+          click: () => {
+            firewallManager.enableAll();
+            firewallManager.applyAllRules().catch(err => {
+              log.error('Error applying firewall rules:', err);
+            });
+            updateTrayMenu();
+          }
+        },
+        {
+          label: 'Disable All Blocks',
+          click: () => {
+            firewallManager.disableAll();
+            updateTrayMenu();
+          }
+        },
+        { type: 'separator' },
+        ...firewallManager.getRules().map(rule => ({
+          label: `${rule.enabled ? '✓' : '○'} ${rule.name}`,
+          type: 'checkbox',
+          checked: rule.enabled,
+          click: () => {
+            firewallManager.toggleRule(rule.id);
+            updateTrayMenu();
+          }
+        }))
+      ]
     },
     { type: 'separator' },
     {
@@ -631,6 +747,10 @@ ipcMain.handle('get-settings', () => {
   return store.get('settings');
 });
 
+ipcMain.handle('get-system-theme', () => {
+  return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+});
+
 ipcMain.handle('get-logs', () => {
   return logger.getLogs();
 });
@@ -794,6 +914,7 @@ ipcMain.handle('export-config', async (event) => {
     const config = {
       profiles: store.get('profiles', []),
       rules: store.get('rules', []),
+      firewallRules: store.get('firewallRules', []),
       settings: store.get('settings')
     };
     
@@ -820,6 +941,7 @@ ipcMain.handle('import-config', async (event) => {
       
       if (config.profiles) store.set('profiles', config.profiles);
       if (config.rules) store.set('rules', config.rules);
+      if (config.firewallRules) store.set('firewallRules', config.firewallRules);
       if (config.settings) store.set('settings', config.settings);
       
       logger.log('Configuration imported', 'info');
@@ -859,6 +981,111 @@ ipcMain.handle('log-error', (event, message) => {
 ipcMain.handle('log-warn', (event, message) => {
   log.warn('[Renderer Warn]', message);
   return true;
+});
+
+// Firewall IPC Handlers
+ipcMain.handle('get-firewall-rules', () => {
+  return firewallManager.getRules();
+});
+
+ipcMain.handle('get-firewall-status', () => {
+  return firewallManager.getStatus();
+});
+
+ipcMain.handle('add-firewall-rule', (event, rule) => {
+  try {
+    return firewallManager.addRule(rule);
+  } catch (error) {
+    log.error('Error adding firewall rule:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('update-firewall-rule', (event, rule) => {
+  try {
+    return firewallManager.updateRule(rule);
+  } catch (error) {
+    log.error('Error updating firewall rule:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('delete-firewall-rule', (event, ruleId) => {
+  try {
+    return firewallManager.deleteRule(ruleId);
+  } catch (error) {
+    log.error('Error deleting firewall rule:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('toggle-firewall-rule', (event, ruleId) => {
+  try {
+    return firewallManager.toggleRule(ruleId);
+  } catch (error) {
+    log.error('Error toggling firewall rule:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('apply-firewall-rules', async (event) => {
+  try {
+    log.info('Applying firewall rules...');
+    const result = await firewallManager.applyAllRules();
+    return result;
+  } catch (error) {
+    log.error('Error applying firewall rules:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('enable-all-firewall-rules', () => {
+  try {
+    firewallManager.enableAll();
+    return true;
+  } catch (error) {
+    log.error('Error enabling all firewall rules:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('disable-all-firewall-rules', () => {
+  try {
+    firewallManager.disableAll();
+    return true;
+  } catch (error) {
+    log.error('Error disabling all firewall rules:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('select-application-file', async (event) => {
+  try {
+    const { filePaths, canceled } = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Application',
+      properties: ['openFile'],
+      filters: process.platform === 'win32' 
+        ? [{ name: 'Executables', extensions: ['exe'] }]
+        : [{ name: 'Applications', extensions: ['app'] }, { name: 'All Files', extensions: ['*'] }]
+    });
+
+    if (canceled || !filePaths || filePaths.length === 0) {
+      return null;
+    }
+
+    const filePath = filePaths[0];
+    const stats = require('fs').statSync(filePath);
+    const fileName = require('path').basename(filePath, process.platform === 'win32' ? '.exe' : '.app');
+    
+    return {
+      path: filePath,
+      name: fileName,
+      size: stats.size
+    };
+  } catch (error) {
+    log.error('Error selecting application file:', error);
+    return null;
+  }
 });
 
 // App lifecycle

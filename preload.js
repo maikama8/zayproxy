@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Settings
   getSettings: () => ipcRenderer.invoke('get-settings'),
   updateSettings: (settings) => ipcRenderer.invoke('update-settings', settings),
+  getSystemTheme: () => ipcRenderer.invoke('get-system-theme'),
   
   // Logs
   getLogs: () => ipcRenderer.invoke('get-logs'),
@@ -49,6 +50,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   logWarn: (message) => {
     ipcRenderer.invoke('log-warn', message);
-  }
+  },
+  
+  // Firewall
+  getFirewallRules: () => ipcRenderer.invoke('get-firewall-rules'),
+  getFirewallStatus: () => ipcRenderer.invoke('get-firewall-status'),
+  addFirewallRule: (rule) => ipcRenderer.invoke('add-firewall-rule', rule),
+  updateFirewallRule: (rule) => ipcRenderer.invoke('update-firewall-rule', rule),
+  deleteFirewallRule: (ruleId) => ipcRenderer.invoke('delete-firewall-rule', ruleId),
+  toggleFirewallRule: (ruleId) => ipcRenderer.invoke('toggle-firewall-rule', ruleId),
+  applyFirewallRules: () => ipcRenderer.invoke('apply-firewall-rules'),
+  enableAllFirewallRules: () => ipcRenderer.invoke('enable-all-firewall-rules'),
+  disableAllFirewallRules: () => ipcRenderer.invoke('disable-all-firewall-rules'),
+  selectApplicationFile: () => ipcRenderer.invoke('select-application-file')
 });
 

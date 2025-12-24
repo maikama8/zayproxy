@@ -17,6 +17,8 @@ let exportLogsBtn;
 let saveSettingsBtn;
 let exportConfigBtn;
 let importConfigBtn;
+let themeToggle;
+let themeSelect;
 
 // Modal elements
 let profileModal;
@@ -26,6 +28,7 @@ let ruleForm;
 
 let profiles = [];
 let rules = [];
+let firewallRules = [];
 let activeProfile = null;
 let enabled = false;
 let settings = {};
@@ -56,6 +59,10 @@ function initializeDOMElements() {
   ruleModal = document.getElementById('ruleModal');
   profileForm = document.getElementById('profileForm');
   ruleForm = document.getElementById('ruleForm');
+  
+  // Theme elements
+  themeToggle = document.getElementById('themeToggle');
+  themeSelect = document.getElementById('themeSelect');
 
   // Log which elements were found
   console.log('DOM element check:', {
@@ -178,7 +185,10 @@ async function init() {
       throw error;
     }
     
-    console.log('Step 6: Starting log refresh...');
+    console.log('Step 6: Initializing theme...');
+    await initializeTheme();
+    
+    console.log('Step 7: Starting log refresh...');
     startLogRefresh();
     
     console.log('=== RENDERER INITIALIZATION COMPLETE ===');
@@ -359,6 +369,63 @@ function setupEventListeners() {
     console.error('addRuleBtn not found!');
   }
 
+  // Firewall buttons
+  const addFirewallRuleBtn = document.getElementById('addFirewallRuleBtn');
+  const applyFirewallBtn = document.getElementById('applyFirewallBtn');
+  
+  if (addFirewallRuleBtn) {
+    addFirewallRuleBtn.addEventListener('click', () => {
+      openFirewallRuleModal();
+    });
+  }
+
+  if (applyFirewallBtn) {
+    applyFirewallBtn.addEventListener('click', async () => {
+      if (confirm('This will modify your system firewall settings. Continue?')) {
+        applyFirewallBtn.disabled = true;
+        applyFirewallBtn.textContent = 'Applying...';
+        try {
+          const result = await window.electronAPI.applyFirewallRules();
+          if (result.success) {
+            alert(`Firewall rules applied successfully! ${result.applied}/${result.total} rules active.`);
+            await loadData();
+            updateUI();
+          } else {
+            alert(`Some firewall rules failed to apply. Check logs for details.`);
+          }
+        } catch (error) {
+          alert(`Error applying firewall rules: ${error.message}`);
+        } finally {
+          applyFirewallBtn.disabled = false;
+          applyFirewallBtn.textContent = 'Apply Firewall Rules';
+        }
+      }
+    });
+  }
+
+  // Firewall form
+  const firewallRuleForm = document.getElementById('firewallRuleForm');
+  if (firewallRuleForm) {
+    firewallRuleForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await saveFirewallRule();
+    });
+  }
+
+  // Browse application button
+  const browseAppBtn = document.getElementById('browseAppBtn');
+  if (browseAppBtn) {
+    browseAppBtn.addEventListener('click', async () => {
+      const fileInfo = await window.electronAPI.selectApplicationFile();
+      if (fileInfo) {
+        document.getElementById('firewallRulePath').value = fileInfo.path;
+        if (!document.getElementById('firewallRuleName').value) {
+          document.getElementById('firewallRuleName').value = fileInfo.name;
+        }
+      }
+    });
+  }
+
   // Clear logs
   if (clearLogsBtn) {
     clearLogsBtn.addEventListener('click', () => {
@@ -388,17 +455,51 @@ function setupEventListeners() {
   if (autoProxyCheckbox) autoProxyCheckbox.checked = settings.autoProxy || false;
   if (themeSelect) themeSelect.value = settings.theme || 'light';
 
+  // Theme toggle
+  if (themeToggle) {
+    themeToggle.addEventListener('change', (e) => {
+      const isDark = e.target.checked;
+      applyTheme(isDark ? 'dark' : 'light');
+      if (themeSelect) {
+        themeSelect.value = isDark ? 'dark' : 'light';
+      }
+    });
+  }
+  
+  // Theme select
+  if (themeSelect) {
+    themeSelect.addEventListener('change', (e) => {
+      const theme = e.target.value;
+      if (theme === 'system') {
+        // Get system theme
+        window.electronAPI.getSystemTheme().then(systemTheme => {
+          applyTheme(systemTheme);
+          if (themeToggle) {
+            themeToggle.checked = systemTheme === 'dark';
+          }
+        });
+      } else {
+        applyTheme(theme);
+        if (themeToggle) {
+          themeToggle.checked = theme === 'dark';
+        }
+      }
+    });
+  }
+
   if (saveSettingsBtn) {
     saveSettingsBtn.addEventListener('click', async () => {
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
       settings = {
         autoStart: autoStartCheckbox ? autoStartCheckbox.checked : false,
         minimizeToTray: minimizeToTrayCheckbox ? minimizeToTrayCheckbox.checked : true,
         autoProxy: autoProxyCheckbox ? autoProxyCheckbox.checked : false,
-        theme: themeSelect ? themeSelect.value : 'light'
+        theme: themeSelect ? themeSelect.value : currentTheme
       };
       await window.electronAPI.updateSettings(settings);
-      document.body.className = settings.theme === 'dark' ? 'dark-theme' : '';
-      alert('Settings saved!');
+      applyTheme(settings.theme === 'system' ? (await window.electronAPI.getSystemTheme()) : settings.theme);
+      // Show toast notification instead of alert
+      showToast('Settings saved!', 'success');
     });
   }
 
@@ -456,22 +557,17 @@ function setupEventListeners() {
     });
   }
 
-  // Modal close handlers
-  document.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
+  // Modal close handlers - daisyUI modals
+  document.querySelectorAll('.modal-cancel').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (profileModal) profileModal.style.display = 'none';
-      if (ruleModal) ruleModal.style.display = 'none';
+      if (profileModal) profileModal.close();
+      if (ruleModal) ruleModal.close();
+      const firewallModal = document.getElementById('firewallRuleModal');
+      if (firewallModal) firewallModal.close();
     });
   });
 
-  window.addEventListener('click', (e) => {
-    if (profileModal && e.target === profileModal) {
-      profileModal.style.display = 'none';
-    }
-    if (ruleModal && e.target === ruleModal) {
-      ruleModal.style.display = 'none';
-    }
-  });
+  // Modal backdrop clicks are handled by daisyUI automatically
   
   console.log('Event listeners setup complete');
 }
@@ -488,14 +584,20 @@ function setupNavigation() {
       e.preventDefault();
       const section = item.dataset.section;
       
-      navItems.forEach(nav => nav.classList.remove('active'));
-      item.classList.add('active');
+      // Update nav items - remove active class and add bg-primary/10 for active
+      navItems.forEach(nav => {
+        nav.classList.remove('active', 'bg-primary', 'text-primary');
+        nav.classList.add('hover:bg-base-300');
+      });
+      item.classList.add('active', 'bg-primary', 'text-primary-content');
+      item.classList.remove('hover:bg-base-300');
       
+      // Update sections - use hidden class for daisyUI
       if (sections && sections.length > 0) {
-        sections.forEach(sec => sec.classList.remove('active'));
+        sections.forEach(sec => sec.classList.add('hidden'));
         const targetSection = document.getElementById(`${section}Section`);
         if (targetSection) {
-          targetSection.classList.add('active');
+          targetSection.classList.remove('hidden');
         }
       }
     });
@@ -509,6 +611,8 @@ function updateUI() {
   updateProfileSwitcher();
   updateProfilesList();
   updateRulesList();
+  updateFirewallRulesList();
+  updateFirewallStatus();
   updateStatus();
   updateLogs();
 }
@@ -552,32 +656,43 @@ function updateProfilesList() {
   profilesList.innerHTML = '';
   
   if (profiles.length === 0) {
-    profilesList.innerHTML = '<div class="empty-state">No profiles configured. Click "Add Profile" to create one.</div>';
+    profilesList.innerHTML = `
+      <div class="col-span-full text-center py-12">
+        <p class="text-base-content/60">No profiles configured. Click "Add Profile" to create one.</p>
+      </div>
+    `;
     return;
   }
 
   profiles.forEach(profile => {
+    const isActive = activeProfile && activeProfile.id === profile.id;
     const card = document.createElement('div');
-    card.className = 'profile-card';
-    if (activeProfile && activeProfile.id === profile.id) {
-      card.classList.add('active');
-    }
+    card.className = `glass-card p-6 ${isActive ? 'ring-2 ring-primary' : ''}`;
+
+    const typeColors = {
+      'HTTP': 'badge-info',
+      'HTTPS': 'badge-success',
+      'SOCKS4': 'badge-warning',
+      'SOCKS5': 'badge-error',
+      'PAC': 'badge-secondary'
+    };
 
     card.innerHTML = `
-      <div class="card-header">
-        <h3>${profile.name}</h3>
-        <div class="card-badge">${profile.type}</div>
+      <div class="flex items-start justify-between mb-4">
+        <div class="flex-1">
+          <h3 class="text-lg font-semibold mb-2">${escapeHtml(profile.name)}</h3>
+          <div class="flex items-center gap-2 mb-2">
+            <span class="badge ${typeColors[profile.type] || 'badge-neutral'}">${escapeHtml(profile.type)}</span>
+            ${isActive ? '<span class="badge badge-success">Active</span>' : ''}
+          </div>
+          <p class="text-sm text-base-content/70">${escapeHtml(profile.host)}:${escapeHtml(profile.port)}</p>
+          ${profile.username ? `<p class="text-xs text-base-content/60 mt-1">Auth: ${escapeHtml(profile.username)}</p>` : ''}
+        </div>
       </div>
-      <div class="card-body">
-        <div class="card-info">
-          <span>${profile.host}:${profile.port}</span>
-          ${profile.username ? `<span>Auth: ${profile.username}</span>` : ''}
-        </div>
-        <div class="card-actions">
-          <button class="btn btn-sm btn-secondary" onclick="editProfile('${profile.id}')">Edit</button>
-          <button class="btn btn-sm btn-danger" onclick="deleteProfile('${profile.id}')">Delete</button>
-          <button class="btn btn-sm btn-primary" onclick="testProfile('${profile.id}')">Test</button>
-        </div>
+      <div class="flex gap-2">
+        <button class="btn btn-sm btn-secondary" onclick="editProfile('${profile.id}')">Edit</button>
+        <button class="btn btn-sm btn-error" onclick="deleteProfile('${profile.id}')">Delete</button>
+        <button class="btn btn-sm btn-primary" onclick="testProfile('${profile.id}')">Test</button>
       </div>
     `;
 
@@ -595,39 +710,41 @@ function updateRulesList() {
   rulesList.innerHTML = '';
   
   if (rules.length === 0) {
-    rulesList.innerHTML = '<div class="empty-state">No rules configured. Click "Add Rule" to create one.</div>';
+    rulesList.innerHTML = `
+      <tr>
+        <td colspan="6" class="text-center py-8 text-base-content/60">
+          No rules configured. Click "Add Rule" to create one.
+        </td>
+      </tr>
+    `;
     return;
   }
 
   rules.forEach(rule => {
-    const card = document.createElement('div');
-    card.className = 'rule-card';
-    if (!rule.enabled) {
-      card.classList.add('disabled');
-    }
-
     const profile = profiles.find(p => p.id === rule.profileId);
     const profileName = profile ? profile.name : 'Unknown';
+    const row = document.createElement('tr');
+    row.className = !rule.enabled ? 'opacity-50' : '';
 
-    card.innerHTML = `
-      <div class="card-header">
-        <h3>${rule.name || rule.pattern}</h3>
-        <div class="card-badge">${rule.type || 'wildcard'}</div>
-      </div>
-      <div class="card-body">
-        <div class="card-info">
-          <span>Pattern: ${rule.pattern}</span>
-          <span>Profile: ${profileName}</span>
-          <span>Priority: ${rule.priority || 0}</span>
+    row.innerHTML = `
+      <td class="font-medium">${escapeHtml(rule.name || rule.pattern)}</td>
+      <td><code class="text-xs bg-base-200 px-2 py-1 rounded">${escapeHtml(rule.pattern)}</code></td>
+      <td>${escapeHtml(profileName)}</td>
+      <td><span class="badge badge-neutral">${rule.priority || 0}</span></td>
+      <td>
+        <span class="badge ${rule.enabled ? 'badge-success' : 'badge-error'}">
+          ${rule.enabled ? 'Enabled' : 'Disabled'}
+        </span>
+      </td>
+      <td>
+        <div class="flex gap-2">
+          <button class="btn btn-xs btn-secondary" onclick="editRule('${rule.id}')">Edit</button>
+          <button class="btn btn-xs btn-error" onclick="deleteRule('${rule.id}')">Delete</button>
         </div>
-        <div class="card-actions">
-          <button class="btn btn-sm btn-secondary" onclick="editRule('${rule.id}')">Edit</button>
-          <button class="btn btn-sm btn-danger" onclick="deleteRule('${rule.id}')">Delete</button>
-        </div>
-      </div>
+      </td>
     `;
 
-    rulesList.appendChild(card);
+    rulesList.appendChild(row);
   });
 }
 
@@ -639,13 +756,13 @@ function updateStatus() {
   }
   
   if (enabled && activeProfile) {
-    statusIndicator.className = 'status-indicator active';
+    statusIndicator.className = 'status-indicator w-3 h-3 rounded-full bg-success';
     statusText.textContent = 'Connected';
     statusProfile.textContent = `${activeProfile.name} (${activeProfile.host}:${activeProfile.port})`;
     if (enableBtn) enableBtn.disabled = true;
     if (disableBtn) disableBtn.disabled = false;
   } else {
-    statusIndicator.className = 'status-indicator';
+    statusIndicator.className = 'status-indicator w-3 h-3 rounded-full bg-error';
     statusText.textContent = 'Disconnected';
     statusProfile.textContent = activeProfile ? `${activeProfile.name} (not active)` : 'No active profile';
     if (enableBtn) enableBtn.disabled = false;
@@ -663,18 +780,31 @@ async function updateLogs() {
   const logs = await window.electronAPI.getLogs();
   logsView.innerHTML = '';
   
+  if (logs.length === 0) {
+    logsView.innerHTML = '<p class="text-center text-base-content/60 py-8">No logs yet</p>';
+    return;
+  }
+  
   logs.slice(-100).reverse().forEach(log => {
     const logEntry = document.createElement('div');
-    logEntry.className = `log-entry log-${log.level}`;
     const date = new Date(log.timestamp);
+    const levelColors = {
+      'info': 'text-info',
+      'warn': 'text-warning',
+      'error': 'text-error',
+      'debug': 'text-base-content/60'
+    };
+    
+    logEntry.className = `flex gap-3 py-2 px-3 border-b border-base-300 last:border-0 hover:bg-base-200/50 transition-smooth`;
     logEntry.innerHTML = `
-      <span class="log-time">${date.toLocaleTimeString()}</span>
-      <span class="log-level">[${log.level.toUpperCase()}]</span>
-      <span class="log-message">${escapeHtml(log.message)}</span>
+      <span class="text-xs text-base-content/50 font-mono">${date.toLocaleTimeString()}</span>
+      <span class="text-xs font-semibold ${levelColors[log.level] || 'text-base-content'}">[${log.level.toUpperCase()}]</span>
+      <span class="flex-1 text-sm">${escapeHtml(log.message)}</span>
     `;
     logsView.appendChild(logEntry);
   });
-
+  
+  // Auto-scroll to bottom
   logsView.scrollTop = logsView.scrollHeight;
 }
 
@@ -695,6 +825,48 @@ function parseProxyString(str) {
     };
   }
   return null;
+}
+
+// Theme functions
+function applyTheme(theme) {
+  const html = document.documentElement;
+  html.setAttribute('data-theme', theme);
+  if (theme === 'dark') {
+    html.classList.add('dark');
+  } else {
+    html.classList.remove('dark');
+  }
+}
+
+function showToast(message, type = 'info') {
+  // Simple toast using daisyUI alert
+  const toast = document.createElement('div');
+  toast.className = `alert alert-${type} fixed top-4 right-4 z-50 shadow-lg max-w-md`;
+  toast.innerHTML = `
+    <span>${escapeHtml(message)}</span>
+    <button class="btn btn-sm btn-circle" onclick="this.parentElement.remove()">✕</button>
+  `;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+// Initialize theme on load
+async function initializeTheme() {
+  try {
+    const savedTheme = settings.theme || 'dark';
+    if (savedTheme === 'system') {
+      const systemTheme = await window.electronAPI.getSystemTheme();
+      applyTheme(systemTheme);
+      if (themeToggle) themeToggle.checked = systemTheme === 'dark';
+    } else {
+      applyTheme(savedTheme);
+      if (themeToggle) themeToggle.checked = savedTheme === 'dark';
+    }
+    if (themeSelect) themeSelect.value = savedTheme;
+  } catch (error) {
+    console.error('Error initializing theme:', error);
+    applyTheme('dark'); // Default to dark
+  }
 }
 
 // Open profile modal
@@ -788,7 +960,9 @@ function openProfileModal(profile = null) {
     });
   }
   
-  profileModal.style.display = 'flex';
+    if (profileModal) {
+      profileModal.showModal();
+    }
 }
 
 // Save profile
@@ -804,9 +978,10 @@ async function saveProfile() {
     
     await loadData();
     updateUI();
-    profileModal.style.display = 'none';
+    if (profileModal) profileModal.close();
+    showToast('Profile saved successfully!', 'success');
   } catch (error) {
-    alert('Error saving profile: ' + error.message);
+    showToast('Error saving profile: ' + error.message, 'error');
   }
 }
 
@@ -845,7 +1020,9 @@ function openRuleModal(rule = null) {
     document.getElementById('ruleEnabled').checked = rule.enabled !== false;
   }
   
-  ruleModal.style.display = 'flex';
+  if (ruleModal) {
+    ruleModal.showModal();
+  }
 }
 
 // Save rule
@@ -870,9 +1047,10 @@ async function saveRule() {
     
     await loadData();
     updateUI();
-    ruleModal.style.display = 'none';
+    if (ruleModal) ruleModal.close();
+    showToast('Rule saved successfully!', 'success');
   } catch (error) {
-    alert('Error saving rule: ' + error.message);
+    showToast('Error saving rule: ' + error.message, 'error');
   }
 }
 
@@ -920,6 +1098,152 @@ window.deleteRule = async function(ruleId) {
     await window.electronAPI.deleteRule(ruleId);
     await loadData();
     updateUI();
+  }
+};
+
+// Firewall Functions
+function updateFirewallRulesList() {
+  const tbody = document.getElementById('firewallRulesBody');
+  if (!tbody) {
+    console.warn('Firewall rules body not found');
+    return;
+  }
+
+  tbody.innerHTML = '';
+
+  if (firewallRules.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No firewall rules configured. Click "Add Rule" to create one.</td></tr>';
+    return;
+  }
+
+  firewallRules.forEach(rule => {
+    const row = document.createElement('tr');
+    row.className = rule.enabled ? '' : 'disabled';
+    
+    const statusBadge = rule.enabled 
+      ? `<span class="badge badge-blocked">Blocked</span>`
+      : `<span class="badge badge-allowed">Allowed</span>`;
+    
+    row.innerHTML = `
+      <td>${escapeHtml(rule.name)}</td>
+      <td class="path-cell">${escapeHtml(rule.path)}</td>
+      <td>${statusBadge}</td>
+      <td class="actions-cell">
+        <button class="btn btn-sm btn-secondary" onclick="editFirewallRule('${rule.id}')">Edit</button>
+        <button class="btn btn-sm ${rule.enabled ? 'btn-warning' : 'btn-success'}" onclick="toggleFirewallRule('${rule.id}')">
+          ${rule.enabled ? 'Disable' : 'Enable'}
+        </button>
+        <button class="btn btn-sm btn-danger" onclick="deleteFirewallRule('${rule.id}')">Delete</button>
+      </td>
+    `;
+    
+    tbody.appendChild(row);
+  });
+}
+
+function updateFirewallStatus() {
+  const statusBadge = document.getElementById('firewallStatusBadge');
+  const statusText = document.getElementById('firewallStatusText');
+  const statusCount = document.getElementById('firewallStatusCount');
+  
+  if (!statusBadge || !statusText || !statusCount) {
+    return;
+  }
+
+  const activeRules = firewallRules.filter(r => r.enabled);
+  const blockedCount = activeRules.filter(r => r.blocked !== false).length;
+  
+  if (activeRules.length > 0) {
+    statusBadge.className = 'status-badge active';
+    statusText.textContent = 'Active';
+    statusCount.textContent = `${blockedCount} app(s) blocked`;
+  } else {
+    statusBadge.className = 'status-badge';
+    statusText.textContent = 'Inactive';
+    statusCount.textContent = '0 rules active';
+  }
+}
+
+function openFirewallRuleModal(rule = null) {
+  const modal = document.getElementById('firewallRuleModal');
+  const title = document.getElementById('firewallRuleModalTitle');
+  const form = document.getElementById('firewallRuleForm');
+  
+  if (!modal || !title || !form) {
+    console.error('Firewall modal elements not found');
+    return;
+  }
+
+  title.textContent = rule ? 'Edit Firewall Rule' : 'Add Firewall Rule';
+  form.reset();
+  
+  if (rule) {
+    document.getElementById('firewallRuleId').value = rule.id;
+    document.getElementById('firewallRuleName').value = rule.name;
+    document.getElementById('firewallRulePath').value = rule.path;
+    document.getElementById('firewallRuleBlocked').checked = rule.blocked !== false;
+    document.getElementById('firewallRuleLogAttempts').checked = rule.logAttempts || false;
+    document.getElementById('firewallRuleEnabled').checked = rule.enabled !== false;
+  }
+  
+  if (modal) {
+    modal.showModal();
+  }
+}
+
+async function saveFirewallRule() {
+  const firewallModal = document.getElementById('firewallRuleModal');
+  const rule = {
+    id: document.getElementById('firewallRuleId').value || null,
+    name: document.getElementById('firewallRuleName').value,
+    path: document.getElementById('firewallRulePath').value,
+    blocked: document.getElementById('firewallRuleBlocked').checked,
+    logAttempts: document.getElementById('firewallRuleLogAttempts').checked,
+    enabled: document.getElementById('firewallRuleEnabled').checked
+  };
+
+  try {
+    if (rule.id) {
+      await window.electronAPI.updateFirewallRule(rule);
+    } else {
+      await window.electronAPI.addFirewallRule(rule);
+    }
+    
+    await loadData();
+    updateUI();
+    if (firewallModal) firewallModal.close();
+    showToast('Firewall rule saved successfully!', 'success');
+  } catch (error) {
+    showToast('Error saving firewall rule: ' + error.message, 'error');
+  }
+}
+
+window.editFirewallRule = async function(ruleId) {
+  const rule = firewallRules.find(r => r.id === ruleId);
+  if (rule) {
+    openFirewallRuleModal(rule);
+  }
+};
+
+window.toggleFirewallRule = async function(ruleId) {
+  try {
+    await window.electronAPI.toggleFirewallRule(ruleId);
+    await loadData();
+    updateUI();
+  } catch (error) {
+    alert('Error toggling firewall rule: ' + error.message);
+  }
+};
+
+window.deleteFirewallRule = async function(ruleId) {
+  if (confirm('Are you sure you want to delete this firewall rule? This will remove the firewall block from your system.')) {
+    try {
+      await window.electronAPI.deleteFirewallRule(ruleId);
+      await loadData();
+      updateUI();
+    } catch (error) {
+      alert('Error deleting firewall rule: ' + error.message);
+    }
   }
 };
 
