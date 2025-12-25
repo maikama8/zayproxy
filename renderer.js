@@ -20,11 +20,25 @@ let importConfigBtn;
 let themeToggle;
 let themeSelect;
 
+// Browser elements
+let browserWebview;
+let browserUrl;
+let browserGoBtn;
+let browserBackBtn;
+let browserForwardBtn;
+let browserRefreshBtn;
+let proxyDetectedAlert;
+let importProxyBtn;
+let detectedProxyData = null;
+let quickAccessUrls = [];
+
 // Modal elements
 let profileModal;
 let ruleModal;
 let profileForm;
 let ruleForm;
+let quickAccessModal;
+let quickAccessItemModal;
 
 let profiles = [];
 let rules = [];
@@ -63,6 +77,16 @@ function initializeDOMElements() {
   // Theme elements
   themeToggle = document.getElementById('themeToggle');
   themeSelect = document.getElementById('themeSelect');
+  
+  // Browser elements
+  browserWebview = document.getElementById('browserWebview');
+  browserUrl = document.getElementById('browserUrl');
+  browserGoBtn = document.getElementById('browserGoBtn');
+  browserBackBtn = document.getElementById('browserBackBtn');
+  browserForwardBtn = document.getElementById('browserForwardBtn');
+  browserRefreshBtn = document.getElementById('browserRefreshBtn');
+  proxyDetectedAlert = document.getElementById('proxyDetectedAlert');
+  importProxyBtn = document.getElementById('importProxyBtn');
 
   // Log which elements were found
   console.log('DOM element check:', {
@@ -229,7 +253,8 @@ async function loadData() {
     activeProfile = await window.electronAPI.getActiveProfile();
     enabled = await window.electronAPI.getEnabledState();
     settings = await window.electronAPI.getSettings();
-    console.log('Data loaded:', { profiles: profiles.length, rules: rules.length });
+    quickAccessUrls = await window.electronAPI.getQuickAccessUrls() || [];
+    console.log('Data loaded:', { profiles: profiles.length, rules: rules.length, quickAccess: quickAccessUrls.length });
   } catch (error) {
     console.error('Error loading data:', error);
     throw error;
@@ -564,12 +589,673 @@ function setupEventListeners() {
       if (ruleModal) ruleModal.close();
       const firewallModal = document.getElementById('firewallRuleModal');
       if (firewallModal) firewallModal.close();
+      const quickAccessModalEl = document.getElementById('quickAccessModal');
+      if (quickAccessModalEl) quickAccessModalEl.close();
+      const quickAccessItemModalEl = document.getElementById('quickAccessItemModal');
+      if (quickAccessItemModalEl) quickAccessItemModalEl.close();
     });
   });
 
   // Modal backdrop clicks are handled by daisyUI automatically
   
+  // Browser event listeners
+  setupBrowserEventListeners();
+  
+  // Quick access management
+  setupQuickAccessListeners();
+  
   console.log('Event listeners setup complete');
+}
+
+// Setup quick access management
+function setupQuickAccessListeners() {
+  const manageBtn = document.getElementById('manageQuickAccessBtn');
+  const addBtn = document.getElementById('addQuickAccessBtn');
+  const quickAccessForm = document.getElementById('quickAccessItemForm');
+  
+  console.log('Setting up quick access listeners...', {
+    manageBtn: !!manageBtn,
+    addBtn: !!addBtn,
+    quickAccessForm: !!quickAccessForm
+  });
+  
+  if (!manageBtn) {
+    console.error('manageQuickAccessBtn not found!');
+    return;
+  }
+  
+  // Use onclick and addEventListener for maximum compatibility
+  manageBtn.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('Manage quick access button clicked (onclick)');
+    try {
+      openQuickAccessModal();
+    } catch (error) {
+      console.error('Error opening quick access modal:', error);
+    }
+    return false;
+  };
+  
+  manageBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('Manage quick access button clicked (listener)');
+    try {
+      openQuickAccessModal();
+    } catch (error) {
+      console.error('Error opening quick access modal:', error);
+    }
+  });
+  
+  if (addBtn) {
+    addBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      openQuickAccessItemModal();
+    });
+  }
+  
+  if (quickAccessForm) {
+    quickAccessForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await saveQuickAccessItem();
+    });
+  }
+  
+  // Modal close handlers - get fresh references
+  const modal = document.getElementById('quickAccessModal');
+  const itemModal = document.getElementById('quickAccessItemModal');
+  
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.close();
+      }
+    });
+  }
+  
+  if (itemModal) {
+    itemModal.addEventListener('click', (e) => {
+      if (e.target === itemModal) {
+        itemModal.close();
+      }
+    });
+  }
+}
+
+// Update quick access buttons display
+function updateQuickAccessButtons() {
+  const container = document.getElementById('quickAccessContainer');
+  if (!container) return;
+  
+  container.innerHTML = '';
+  
+  quickAccessUrls.forEach((item) => {
+    const button = document.createElement('button');
+    button.className = 'btn btn-xs btn-ghost';
+    button.textContent = item.name;
+    button.onclick = () => navigateBrowserUrl(item.url);
+    container.appendChild(button);
+  });
+}
+
+// Open quick access management modal
+function openQuickAccessModal() {
+  const modal = document.getElementById('quickAccessModal');
+  if (!modal) {
+    console.error('quickAccessModal element not found');
+    return;
+  }
+  
+  const list = document.getElementById('quickAccessList');
+  if (!list) {
+    console.error('quickAccessList element not found');
+    return;
+  }
+  
+  list.innerHTML = '';
+  
+  if (!quickAccessUrls || quickAccessUrls.length === 0) {
+    list.innerHTML = '<p class="text-sm text-base-content/60">No quick access links. Click "Add New Link" to create one.</p>';
+  } else {
+    quickAccessUrls.forEach((item, index) => {
+      const div = document.createElement('div');
+      div.className = 'flex items-center justify-between p-3 bg-base-200 rounded-lg mb-2';
+      div.innerHTML = `
+        <div class="flex-1">
+          <div class="font-semibold">${escapeHtml(item.name)}</div>
+          <div class="text-xs text-base-content/60">${escapeHtml(item.url)}</div>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-xs btn-secondary" onclick="editQuickAccessItem(${index})">Edit</button>
+          <button class="btn btn-xs btn-error" onclick="deleteQuickAccessItem(${index})">Delete</button>
+        </div>
+      `;
+      list.appendChild(div);
+    });
+  }
+  
+  modal.showModal();
+}
+
+// Open add/edit quick access item modal
+function openQuickAccessItemModal(index = null) {
+  const modal = document.getElementById('quickAccessItemModal');
+  if (!modal) {
+    console.error('quickAccessItemModal element not found');
+    return;
+  }
+  
+  const form = document.getElementById('quickAccessItemForm');
+  const title = document.getElementById('quickAccessItemModalTitle');
+  const indexInput = document.getElementById('quickAccessItemIndex');
+  const nameInput = document.getElementById('quickAccessItemName');
+  const urlInput = document.getElementById('quickAccessItemUrl');
+  
+  if (!form || !title || !indexInput || !nameInput || !urlInput) {
+    console.error('Quick access item modal elements not found');
+    return;
+  }
+  
+  form.reset();
+  
+  if (index !== null && quickAccessUrls && quickAccessUrls[index]) {
+    title.textContent = 'Edit Quick Access Link';
+    indexInput.value = index;
+    nameInput.value = quickAccessUrls[index].name;
+    urlInput.value = quickAccessUrls[index].url;
+  } else {
+    title.textContent = 'Add Quick Access Link';
+    indexInput.value = '';
+  }
+  
+  modal.showModal();
+}
+
+// Save quick access item
+async function saveQuickAccessItem() {
+  const indexInput = document.getElementById('quickAccessItemIndex');
+  const nameInput = document.getElementById('quickAccessItemName');
+  const urlInput = document.getElementById('quickAccessItemUrl');
+  
+  if (!nameInput || !urlInput) return;
+  
+  const name = nameInput.value.trim();
+  const url = urlInput.value.trim();
+  const index = indexInput.value ? parseInt(indexInput.value) : null;
+  
+  if (!name || !url) {
+    showToast('Please fill in all fields', 'error');
+    return;
+  }
+  
+  // Validate URL
+  try {
+    new URL(url);
+  } catch (e) {
+    showToast('Please enter a valid URL', 'error');
+    return;
+  }
+  
+  const newItem = { name, url };
+  
+  if (index !== null && index >= 0 && index < quickAccessUrls.length) {
+    quickAccessUrls[index] = newItem;
+  } else {
+    quickAccessUrls.push(newItem);
+  }
+  
+  try {
+    await window.electronAPI.updateQuickAccessUrls(quickAccessUrls);
+    await loadData();
+    updateQuickAccessButtons();
+    const itemModal = document.getElementById('quickAccessItemModal');
+    if (itemModal) itemModal.close();
+    const modal = document.getElementById('quickAccessModal');
+    if (modal) {
+      openQuickAccessModal(); // Refresh the list
+    }
+    showToast('Quick access link saved successfully!', 'success');
+  } catch (error) {
+    showToast('Error saving quick access link: ' + error.message, 'error');
+  }
+}
+
+// Edit quick access item
+window.editQuickAccessItem = function(index) {
+  openQuickAccessItemModal(index);
+};
+
+// Delete quick access item
+window.deleteQuickAccessItem = async function(index) {
+  if (index < 0 || index >= quickAccessUrls.length) return;
+  
+  if (quickAccessUrls && quickAccessUrls[index] && confirm(`Are you sure you want to delete "${quickAccessUrls[index].name}"?`)) {
+    quickAccessUrls.splice(index, 1);
+    
+    try {
+      await window.electronAPI.updateQuickAccessUrls(quickAccessUrls);
+      await loadData();
+      updateQuickAccessButtons();
+      openQuickAccessModal(); // Refresh the list
+      showToast('Quick access link deleted', 'success');
+    } catch (error) {
+      showToast('Error deleting quick access link: ' + error.message, 'error');
+    }
+  }
+};
+
+// Setup browser event listeners
+function setupBrowserEventListeners() {
+  if (!browserWebview) {
+    console.warn('Browser webview not found, skipping browser setup');
+    return;
+  }
+  
+  // Wait for webview to load
+  browserWebview.addEventListener('dom-ready', () => {
+    console.log('Browser webview ready');
+    setupProxyDetection();
+  });
+  
+  browserWebview.addEventListener('did-navigate', (e) => {
+    if (browserUrl) {
+      browserUrl.value = e.url;
+    }
+    hideProxyAlert();
+  });
+  
+  browserWebview.addEventListener('did-navigate-in-page', (e) => {
+    if (browserUrl) {
+      browserUrl.value = e.url;
+    }
+    hideProxyAlert();
+  });
+  
+  if (browserGoBtn) {
+    browserGoBtn.addEventListener('click', () => {
+      navigateBrowserUrl();
+    });
+  }
+  
+  const scanPageBtn = document.getElementById('scanPageBtn');
+  if (scanPageBtn) {
+    scanPageBtn.addEventListener('click', async () => {
+      await scanPageForProxies();
+    });
+  }
+  
+  if (browserUrl) {
+    browserUrl.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        navigateBrowserUrl();
+      }
+    });
+  }
+  
+  if (browserBackBtn) {
+    browserBackBtn.addEventListener('click', () => {
+      if (browserWebview) {
+        browserWebview.goBack();
+      }
+    });
+  }
+  
+  if (browserForwardBtn) {
+    browserForwardBtn.addEventListener('click', () => {
+      if (browserWebview) {
+        browserWebview.goForward();
+      }
+    });
+  }
+  
+  if (browserRefreshBtn) {
+    browserRefreshBtn.addEventListener('click', () => {
+      if (browserWebview) {
+        browserWebview.reload();
+      }
+    });
+  }
+  
+  if (importProxyBtn) {
+    importProxyBtn.addEventListener('click', () => {
+      importDetectedProxy();
+    });
+  }
+  
+  // Listen for proxy detection events from main process
+  if (window.electronAPI && window.electronAPI.onProxyDetected) {
+    window.electronAPI.onProxyDetected((proxyData) => {
+      handleProxyDetected(proxyData);
+    });
+  }
+}
+
+// Navigate browser to URL
+function navigateBrowserUrl(customUrl = null) {
+  if (!browserUrl || !browserWebview) return;
+  
+  let url = customUrl || browserUrl.value.trim();
+  if (!url) return;
+  
+  // Add https:// if no protocol
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'https://' + url;
+  }
+  
+  browserUrl.value = url;
+  browserWebview.src = url;
+}
+
+// Global function for quick access buttons
+window.navigateBrowserUrl = navigateBrowserUrl;
+
+// Scan page for proxies (manual scan button)
+async function scanPageForProxies() {
+  if (!browserWebview) {
+    showToast('Browser not ready', 'error');
+    return;
+  }
+  
+  try {
+    console.log('Scanning page for proxies...');
+    const results = await browserWebview.executeJavaScript(`
+      (function() {
+        const proxies = [];
+        const bodyText = document.body.innerText || document.body.textContent || '';
+        
+        // Find all IP:PORT patterns
+        const ipPortPattern = /(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}):(\\d{1,5})/g;
+        const matches = [...bodyText.matchAll(ipPortPattern)];
+        
+        matches.forEach((match, index) => {
+          if (index >= 50) return; // Limit to 50 proxies
+          
+          const host = match[1];
+          const port = parseInt(match[2]);
+          
+          if (port > 0 && port <= 65535) {
+            // Check if this is part of a larger pattern with credentials
+            const contextStart = Math.max(0, match.index - 50);
+            const contextEnd = Math.min(bodyText.length, match.index + match[0].length + 50);
+            const context = bodyText.substring(contextStart, contextEnd);
+            
+            // Try to find IP:PORT:USER:PASS pattern
+            const fullPattern = new RegExp(host.replace(/\\./g, '\\\\.') + ':' + port + ':(\\\\S+):(\\\\S+)');
+            const fullMatch = context.match(fullPattern);
+            
+            proxies.push({
+              host: host,
+              port: port,
+              username: fullMatch ? fullMatch[1] : null,
+              password: fullMatch ? fullMatch[2] : null,
+              type: 'HTTP',
+              context: context.substring(0, 100)
+            });
+          }
+        });
+        
+        return proxies;
+      })();
+    `);
+    
+    console.log('Scan results:', results);
+    
+    if (results && results.length > 0) {
+      // Show first proxy or let user choose
+      const firstProxy = results[0];
+      handleProxyDetected(firstProxy);
+      showToast(`Found ${results.length} proxy(ies). Using first one.`, 'success');
+    } else {
+      showToast('No proxies found on this page', 'info');
+    }
+  } catch (error) {
+    console.error('Error scanning page:', error);
+    showToast('Error scanning page: ' + error.message, 'error');
+  }
+}
+
+// Setup proxy detection in webview
+function setupProxyDetection() {
+  if (!browserWebview) {
+    console.warn('Browser webview not available for proxy detection');
+    return;
+  }
+  
+  console.log('Setting up proxy detection...');
+  
+  // Inject proxy detection script into the webview on every page load
+  const injectDetection = () => {
+    console.log('Attempting to inject proxy detection script...');
+    browserWebview.executeJavaScript(`
+      (function() {
+        console.log('Proxy detection script injected successfully');
+        
+        // Function to extract proxy data from text
+        function extractProxyData(text) {
+          // Try IP:PORT:USER:PASS format first
+          const fullMatch = text.match(/(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}):(\\d{1,5})(?::([^:\\s@]+):([^\\s@]+))?/);
+          if (fullMatch) {
+            const host = fullMatch[1];
+            const port = parseInt(fullMatch[2]);
+            if (port > 0 && port <= 65535) {
+              return {
+                host: host,
+                port: port,
+                username: fullMatch[3] || null,
+                password: fullMatch[4] || null,
+                type: 'HTTP'
+              };
+            }
+          }
+          
+          // Try IP:PORT format
+          const simpleMatch = text.match(/(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}):(\\d{1,5})/);
+          if (simpleMatch) {
+            const host = simpleMatch[1];
+            const port = parseInt(simpleMatch[2]);
+            if (port > 0 && port <= 65535) {
+              return {
+                host: host,
+                port: port,
+                username: null,
+                password: null,
+                type: 'HTTP'
+              };
+            }
+          }
+          
+          return null;
+        }
+        
+        // Listen for clicks on any element
+        document.addEventListener('click', function(e) {
+          const target = e.target;
+          let text = target.textContent || target.innerText || target.value || '';
+          
+          // Also check parent elements up to 3 levels
+          let element = target;
+          for (let i = 0; i < 3 && element && element.parentElement; i++) {
+            const parentText = element.parentElement.textContent || element.parentElement.innerText || '';
+            if (parentText.length > text.length && parentText.length < 500) {
+              text = parentText;
+              element = element.parentElement;
+            } else {
+              break;
+            }
+          }
+          
+          const proxyData = extractProxyData(text);
+          
+          if (proxyData) {
+            console.log('Proxy detected on click:', proxyData);
+            
+            // Try to find username/password in nearby elements
+            const row = target.closest('tr, div, li, td, span, p');
+            if (row) {
+              const rowText = row.textContent || row.innerText || '';
+              const fullMatch = rowText.match(/(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}):(\\d{1,5}):([^:\\s@]+):([^\\s@]+)/);
+              if (fullMatch) {
+                proxyData.host = fullMatch[1];
+                proxyData.port = parseInt(fullMatch[2]);
+                proxyData.username = fullMatch[3];
+                proxyData.password = fullMatch[4];
+              }
+            }
+            
+            // Detect proxy type from context
+            const context = (target.closest('table, div, section, tbody, tr')?.textContent || '').toLowerCase();
+            if (context.includes('socks5') || context.includes('socks 5')) {
+              proxyData.type = 'SOCKS5';
+            } else if (context.includes('socks4') || context.includes('socks 4')) {
+              proxyData.type = 'SOCKS4';
+            } else if (context.includes('https')) {
+              proxyData.type = 'HTTPS';
+            }
+            
+            // Send to parent window via IPC
+            try {
+              const { ipcRenderer } = require('electron');
+              if (ipcRenderer) {
+                console.log('Sending proxy data via IPC:', proxyData);
+                ipcRenderer.sendToHost('proxy-detected', proxyData);
+              }
+            } catch (err) {
+              console.error('Error sending proxy data via IPC:', err);
+            }
+          }
+        }, true);
+        
+        console.log('Click event listener attached');
+      })();
+    `).then(() => {
+      console.log('Proxy detection script injected successfully');
+    }).catch(err => {
+      console.error('Failed to inject proxy detection script:', err);
+    });
+  };
+  
+  // Inject on initial load
+  browserWebview.addEventListener('dom-ready', () => {
+    console.log('Webview DOM ready, injecting proxy detection');
+    setTimeout(injectDetection, 1000);
+  });
+  
+  // Also inject on navigation
+  browserWebview.addEventListener('did-navigate', () => {
+    console.log('Webview navigated, re-injecting proxy detection');
+    setTimeout(injectDetection, 1000);
+  });
+  
+  browserWebview.addEventListener('did-navigate-in-page', () => {
+    setTimeout(injectDetection, 1000);
+  });
+  
+  // Listen for IPC messages from the webview
+  browserWebview.addEventListener('ipc-message', (event) => {
+    console.log('IPC message received from webview:', event.channel, event.args);
+    if (event.channel === 'proxy-detected') {
+      console.log('Proxy detected via IPC:', event.args[0]);
+      handleProxyDetected(event.args[0]);
+    }
+  });
+  
+  console.log('Proxy detection setup complete');
+}
+
+// Handle detected proxy
+function handleProxyDetected(proxyData) {
+  console.log('handleProxyDetected called with:', proxyData);
+  
+  if (!proxyData || !proxyData.host || !proxyData.port) {
+    console.warn('Invalid proxy data received:', proxyData);
+    return;
+  }
+  
+  detectedProxyData = proxyData;
+  console.log('Stored proxy data:', detectedProxyData);
+  
+  const alertEl = document.getElementById('proxyDetectedAlert');
+  const infoEl = document.getElementById('proxyDetectedInfo');
+  
+  if (alertEl) {
+    alertEl.classList.remove('hidden');
+    console.log('Showing proxy detected alert');
+  } else {
+    console.error('proxyDetectedAlert element not found');
+  }
+  
+  if (infoEl) {
+    const authText = proxyData.username ? ` (${proxyData.username}:****)` : '';
+    infoEl.textContent = `${proxyData.host}:${proxyData.port} (${proxyData.type || 'HTTP'})${authText}`;
+  }
+  
+  // Send to main process for storage
+  if (window.electronAPI && window.electronAPI.extractProxyFromPage) {
+    window.electronAPI.extractProxyFromPage(proxyData).then(() => {
+      console.log('Proxy data sent to main process');
+    }).catch(err => {
+      console.error('Error sending proxy data to main process:', err);
+    });
+  }
+  
+  // Show a toast notification
+  showToast(`Proxy detected: ${proxyData.host}:${proxyData.port}`, 'success');
+}
+
+// Hide proxy alert
+function hideProxyAlert() {
+  if (proxyDetectedAlert) {
+    proxyDetectedAlert.classList.add('hidden');
+  }
+  detectedProxyData = null;
+}
+
+// Import detected proxy to profiles
+async function importDetectedProxy() {
+  if (!detectedProxyData) return;
+  
+  // Switch to profiles section
+  const profilesNav = document.querySelector('[data-section="profiles"]');
+  if (profilesNav) {
+    profilesNav.click();
+  }
+  
+  // Wait a bit for section to show
+  setTimeout(() => {
+    // Open profile modal with detected data
+    const proxyProfile = {
+      name: `${detectedProxyData.host}:${detectedProxyData.port}`,
+      type: detectedProxyData.type || 'HTTP',
+      host: detectedProxyData.host,
+      port: detectedProxyData.port,
+      username: detectedProxyData.username || null,
+      password: detectedProxyData.password || null
+    };
+    
+    openProfileModal(null); // Open new profile modal
+    fillProfileForm(proxyProfile);
+    
+    // Hide alert
+    hideProxyAlert();
+  }, 300);
+}
+
+// Fill profile form with data
+function fillProfileForm(profile) {
+  const nameInput = document.getElementById('profileName');
+  const typeSelect = document.getElementById('profileType');
+  const hostInput = document.getElementById('profileHost');
+  const portInput = document.getElementById('profilePort');
+  const usernameInput = document.getElementById('profileUsername');
+  const passwordInput = document.getElementById('profilePassword');
+  
+  if (nameInput) nameInput.value = profile.name || '';
+  if (typeSelect) typeSelect.value = profile.type || 'HTTP';
+  if (hostInput) hostInput.value = profile.host || '';
+  if (portInput) portInput.value = profile.port || '';
+  if (usernameInput) usernameInput.value = profile.username || '';
+  if (passwordInput) passwordInput.value = profile.password || '';
 }
 
 // Setup navigation
@@ -616,6 +1302,7 @@ function updateUI() {
   updateRulesList();
   updateFirewallRulesList();
   updateFirewallStatus();
+  updateQuickAccessButtons();
   updateStatus();
   updateLogs();
 }

@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updateSettings: (settings) => ipcRenderer.invoke('update-settings', settings),
   getSystemTheme: () => ipcRenderer.invoke('get-system-theme'),
   
+  // Quick Access
+  getQuickAccessUrls: () => ipcRenderer.invoke('get-quick-access-urls'),
+  updateQuickAccessUrls: (urls) => ipcRenderer.invoke('update-quick-access-urls', urls),
+  
   // Logs
   getLogs: () => ipcRenderer.invoke('get-logs'),
   exportLogs: () => ipcRenderer.invoke('export-logs'),
@@ -62,6 +66,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   applyFirewallRules: () => ipcRenderer.invoke('apply-firewall-rules'),
   enableAllFirewallRules: () => ipcRenderer.invoke('enable-all-firewall-rules'),
   disableAllFirewallRules: () => ipcRenderer.invoke('disable-all-firewall-rules'),
-  selectApplicationFile: () => ipcRenderer.invoke('select-application-file')
+  selectApplicationFile: () => ipcRenderer.invoke('select-application-file'),
+  
+  // Browser
+  navigateBrowser: (url) => ipcRenderer.invoke('navigate-browser', url),
+  getBrowserUrl: () => ipcRenderer.invoke('get-browser-url'),
+  extractProxyFromPage: () => ipcRenderer.invoke('extract-proxy-from-page'),
+  onProxyDetected: (callback) => {
+    ipcRenderer.on('proxy-detected', (event, proxyData) => callback(proxyData));
+  }
 });
 

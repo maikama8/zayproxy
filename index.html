@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-src 'self' https: http:;">
   <title>ZayProxy</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -44,6 +44,12 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           <span>Logs</span>
+        </a>
+        <a href="#" class="nav-item flex items-center gap-3 px-4 py-3 rounded-lg transition-smooth hover:bg-base-300" data-section="browser">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+          </svg>
+          <span>Browser</span>
         </a>
         <a href="#" class="nav-item flex items-center gap-3 px-4 py-3 rounded-lg transition-smooth hover:bg-base-300" data-section="settings">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -232,6 +238,91 @@
           </div>
         </section>
 
+        <!-- Browser Section -->
+        <section id="browserSection" class="content-section hidden">
+          <div class="flex items-center justify-between mb-6">
+            <div>
+              <h2 class="text-2xl font-bold">Proxy Browser</h2>
+              <p class="text-sm text-base-content/60 mt-1">Browse proxy providers and import proxies directly</p>
+            </div>
+            <div class="flex gap-2">
+              <button id="browserRefreshBtn" class="btn btn-secondary gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </button>
+              <button id="browserBackBtn" class="btn btn-secondary gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                Back
+              </button>
+              <button id="browserForwardBtn" class="btn btn-secondary gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                </svg>
+                Forward
+              </button>
+            </div>
+          </div>
+
+          <!-- Quick Access Providers -->
+          <div class="glass-card p-4 mb-4">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-sm font-semibold">Quick Access:</span>
+              <button id="manageQuickAccessBtn" class="btn btn-xs btn-ghost gap-1">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                </svg>
+                Manage
+              </button>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap" id="quickAccessContainer">
+              <!-- Quick access buttons will be dynamically added here -->
+            </div>
+          </div>
+
+          <!-- Browser Address Bar -->
+          <div class="glass-card p-4 mb-4">
+            <div class="flex gap-2">
+              <input type="url" id="browserUrl" class="input input-bordered flex-1" placeholder="Enter proxy provider URL..." value="https://www.proxyscrape.com" />
+              <button id="browserGoBtn" class="btn btn-primary">Go</button>
+              <button id="scanPageBtn" class="btn btn-secondary gap-2" title="Scan page for proxies">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                Scan
+              </button>
+            </div>
+          </div>
+
+          <!-- Browser View -->
+          <div class="glass-card p-2">
+            <div id="browserContainer" class="w-full h-[600px] bg-base-200 rounded-lg overflow-hidden">
+              <webview id="browserWebview" src="https://www.proxyscrape.com" 
+                style="width: 100%; height: 100%;" 
+                partition="persist:proxy-browser"
+                webpreferences="nodeIntegration=yes,contextIsolation=no">
+              </webview>
+            </div>
+          </div>
+
+          <!-- Proxy Detection Status -->
+          <div id="proxyDetectedAlert" class="alert alert-success mt-4 hidden">
+            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+              <h3 class="font-bold">Proxy Detected!</h3>
+              <div class="text-xs" id="proxyDetectedInfo"></div>
+            </div>
+            <div>
+              <button id="importProxyBtn" class="btn btn-sm btn-primary">Import to Profiles</button>
+            </div>
+          </div>
+        </section>
+
         <!-- Settings Section -->
         <section id="settingsSection" class="content-section hidden">
           <div class="mb-6">
@@ -365,6 +456,59 @@
 
         <div class="modal-action">
           <button type="button" id="testProfileBtn" class="btn btn-secondary">Test Proxy</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" class="btn modal-cancel">Cancel</button>
+        </div>
+      </form>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button>close</button>
+    </form>
+  </dialog>
+
+  <!-- Quick Access Management Modal -->
+  <dialog id="quickAccessModal" class="modal">
+    <div class="modal-box max-w-2xl backdrop-blur-xl bg-base-100/95">
+      <h3 class="font-bold text-lg mb-4">Manage Quick Access Links</h3>
+      <div class="space-y-4">
+        <div id="quickAccessList" class="space-y-2 max-h-96 overflow-y-auto">
+          <!-- Quick access items will be added here -->
+        </div>
+        <button id="addQuickAccessBtn" class="btn btn-primary btn-sm w-full gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Add New Link
+        </button>
+      </div>
+      <div class="modal-action">
+        <button type="button" class="btn modal-cancel">Close</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button>close</button>
+    </form>
+  </dialog>
+
+  <!-- Add/Edit Quick Access Item Modal -->
+  <dialog id="quickAccessItemModal" class="modal">
+    <div class="modal-box max-w-xl backdrop-blur-xl bg-base-100/95">
+      <h3 class="font-bold text-lg mb-4" id="quickAccessItemModalTitle">Add Quick Access Link</h3>
+      <form id="quickAccessItemForm">
+        <input type="hidden" id="quickAccessItemIndex">
+        <div class="form-control mb-4">
+          <label class="label">
+            <span class="label-text">Name *</span>
+          </label>
+          <input type="text" id="quickAccessItemName" class="input input-bordered w-full" placeholder="e.g., ProxyScrape" required />
+        </div>
+        <div class="form-control mb-4">
+          <label class="label">
+            <span class="label-text">URL *</span>
+          </label>
+          <input type="url" id="quickAccessItemUrl" class="input input-bordered w-full" placeholder="https://example.com" required />
+        </div>
+        <div class="modal-action">
           <button type="submit" class="btn btn-primary">Save</button>
           <button type="button" class="btn modal-cancel">Cancel</button>
         </div>

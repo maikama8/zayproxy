@@ -50,7 +50,15 @@ const store = new Store({
       autoStart: false,
       passwordProtection: false,
       autoProxy: false,
-      minimizeToTray: true
+      minimizeToTray: true,
+      quickAccessUrls: [
+        { name: 'ProxyScrape', url: 'https://www.proxyscrape.com' },
+        { name: 'Proxy-List', url: 'https://www.proxy-list.download' },
+        { name: 'Free Proxy List', url: 'https://free-proxy-list.net' },
+        { name: 'Spys One', url: 'https://www.spys.one' },
+        { name: 'Proxy Servers', url: 'https://www.proxyservers.pro' },
+        { name: 'DichVuSocks', url: 'https://dichvusocks.net/' }
+      ]
     },
     activeProfile: null,
     enabled: false
@@ -98,7 +106,9 @@ function createWindow() {
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         nodeIntegration: false,
-        contextIsolation: true
+        contextIsolation: true,
+        webviewTag: true,
+        sandbox: false
       },
       icon: icon,
       show: false
@@ -878,6 +888,29 @@ ipcMain.handle('update-settings', (event, settings) => {
   return true;
 });
 
+ipcMain.handle('get-quick-access-urls', () => {
+  try {
+    const settings = store.get('settings', {});
+    return settings.quickAccessUrls || [];
+  } catch (error) {
+    log.error('Error getting quick access URLs:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('update-quick-access-urls', (event, urls) => {
+  try {
+    const currentSettings = store.get('settings', {});
+    const updatedSettings = { ...currentSettings, quickAccessUrls: urls };
+    store.set('settings', updatedSettings);
+    log.info('Quick access URLs updated');
+    return true;
+  } catch (error) {
+    log.error('Error updating quick access URLs:', error);
+    return false;
+  }
+});
+
 ipcMain.handle('switch-profile', async (event, profileId) => {
   await switchProfile(profileId);
   return true;
@@ -1131,6 +1164,35 @@ ipcMain.handle('select-application-file', async (event) => {
     log.error('Error selecting application file:', error);
     return null;
   }
+});
+
+// Browser IPC handlers
+ipcMain.handle('navigate-browser', async (event, url) => {
+  if (mainWindow) {
+    mainWindow.webContents.send('browser-navigate', url);
+  }
+  return true;
+});
+
+ipcMain.handle('get-browser-url', async () => {
+  // This will be handled by the webview
+  return '';
+});
+
+ipcMain.handle('extract-proxy-from-page', async (event, proxyData) => {
+  // Store the detected proxy data temporarily
+  if (!global.detectedProxy) {
+    global.detectedProxy = {};
+  }
+  global.detectedProxy = proxyData;
+  
+  if (mainWindow) {
+    mainWindow.webContents.send('proxy-detected', proxyData);
+  }
+  
+  log.info('Proxy detected from browser:', { host: proxyData.host, port: proxyData.port, type: proxyData.type });
+  
+  return true;
 });
 
 // App lifecycle
